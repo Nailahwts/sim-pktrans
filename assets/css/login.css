@@ -1,0 +1,115 @@
+/* ====== Reset & Base ====== */
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: linear-gradient(135deg, #7d9bf5, #1d0281);
+    height: 100vh;
+    margin: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+/* ====== Container ====== */
+.login-container {
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.15);
+    padding: 40px 30px;
+    width: 100%;
+    max-width: 420px;
+    animation: fadeIn 0.8s ease-in-out;
+    text-align: center;
+}
+
+/* ====== Title ====== */
+.login-title {
+    font-size: 24px;
+    font-weight: bold;
+    color: #4e73df;
+    margin-bottom: 25px;
+}
+
+/* ====== Input ====== */
+.login-form .login-input {
+    width: 100%;
+    padding: 12px 15px;
+    margin: 12px 0;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    transition: all 0.3s ease-in-out;
+    font-size: 14px;
+}
+
+.login-form .login-input:focus {
+    border-color: #4e73df;
+    box-shadow: 0 0 8px rgba(78,115,223,0.3);
+    outline: none;
+}
+
+/* ====== Button ====== */
+.login-btn {
+    width: 100%;
+    background: #4e73df;
+    color: #fff;
+    border: none;
+    padding: 12px;
+    border-radius: 8px;
+    margin-top: 15px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease-in-out;
+}
+
+.login-btn:hover {
+    background: #2e59d9;
+}
+
+/* ====== Error Message ====== */
+.error {
+    margin-top: 15px;
+    padding: 10px;
+    background: #f8d7da;
+    color: #721c24;
+    font-size: 14px;
+    border-radius: 6px;
+}
+
+/* ====== Info ====== */
+.info {
+    margin-top: 20px;
+    font-size: 14px;
+    color: #555;
+}
+
+.info a {
+    color: #2e59d9;
+    text-decoration: none;
+    font-weight: bold;
+}
+
+.info a:hover {
+    text-decoration: underline;
+}
+
+/* ====== Admin List ====== */
+.login-list {
+    margin-top: 20px;
+    padding: 0;
+    list-style: none;
+    text-align: left;
+}
+
+.login-list li {
+    padding: 8px 12px;
+    background: #f8f9fc;
+    margin-bottom: 6px;
+    border-radius: 6px;
+    font-size: 14px;
+}
+
+/* ====== Animation ====== */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-20px); }
+    to { opacity: 1; transform: translateY(0); }
+}

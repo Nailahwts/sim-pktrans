@@ -1,0 +1,2 @@
+- [x] Modify sales_order.php to truncate qty to 3 decimals instead of rounding
+- [x] Modify get_total_tonase.php to truncate total_tonase to 3 decimals instead of rounding
