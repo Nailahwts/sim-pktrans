@@ -1,14 +1,8 @@
 <?php
 session_start();
-include "../config/database.php"; // koneksi DB
+include "../config/database.php";
 
 $username = $_SESSION['admin'];
-
-// 🔹 Update data lama agar kolom foreign key terisi sesuai tipe
-$conn->query("UPDATE harga SET asal_dermaga_id = asal_id WHERE asal_tipe = 'dermaga'");
-$conn->query("UPDATE harga SET asal_warehouse_id = asal_id WHERE asal_tipe = 'warehouse'");
-$conn->query("UPDATE harga SET tujuan_dermaga_id = tujuan_id WHERE tujuan_tipe = 'dermaga'");
-$conn->query("UPDATE harga SET tujuan_warehouse_id = tujuan_id WHERE tujuan_tipe = 'warehouse'");
 
 // Handle form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
@@ -47,92 +41,97 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $harga = $_POST['harga'];
         $tanggal = !empty($_POST['tanggal']) ? $_POST['tanggal'] : NULL;
 
-        // Validasi asal
-        $asal_table = $asal_tipe === 'dermaga' ? 'dermaga' : 'warehouse';
-        $asal_col = $asal_tipe === 'dermaga' ? 'dermaga_id' : 'warehouse_id';
-        $check_asal = $conn->prepare("SELECT COUNT(*) FROM $asal_table WHERE $asal_col = ?");
-        $check_asal->bind_param("i", $asal_id);
-        $check_asal->execute();
-        $check_asal->bind_result($asal_count);
-        $check_asal->fetch();
-        $check_asal->close();
-
-        // Validasi tujuan
-        $tujuan_table = $tujuan_tipe === 'dermaga' ? 'dermaga' : 'warehouse';
-        $tujuan_col = $tujuan_tipe === 'dermaga' ? 'dermaga_id' : 'warehouse_id';
-        $check_tujuan = $conn->prepare("SELECT COUNT(*) FROM $tujuan_table WHERE $tujuan_col = ?");
-        $check_tujuan->bind_param("i", $tujuan_id);
-        $check_tujuan->execute();
-        $check_tujuan->bind_result($tujuan_count);
-        $check_tujuan->fetch();
-        $check_tujuan->close();
-
-        if ($asal_count == 0) {
-            $error_message = "Asal ID tidak valid untuk tipe $asal_tipe.";
-        } elseif ($tujuan_count == 0) {
-            $error_message = "Tujuan ID tidak valid untuk tipe $tujuan_tipe.";
+        // ✅ TAMBAHAN: Validasi asal dan tujuan tidak boleh sama
+        if ($asal_tipe === $tujuan_tipe && $asal_id === $tujuan_id) {
+            $error_message = "⚠️ Asal dan tujuan tidak boleh sama!";
         } else {
-            // Tentukan kolom foreign key
-            $asal_dermaga_id = $asal_tipe === 'dermaga' ? $asal_id : NULL;
-            $asal_warehouse_id = $asal_tipe === 'warehouse' ? $asal_id : NULL;
-            $tujuan_dermaga_id = $tujuan_tipe === 'dermaga' ? $tujuan_id : NULL;
-            $tujuan_warehouse_id = $tujuan_tipe === 'warehouse' ? $tujuan_id : NULL;
+            // Validasi asal
+            $asal_table = $asal_tipe === 'dermaga' ? 'dermaga' : 'warehouse';
+            $asal_col = $asal_tipe === 'dermaga' ? 'dermaga_id' : 'warehouse_id';
+            $check_asal = $conn->prepare("SELECT COUNT(*) FROM $asal_table WHERE $asal_col = ?");
+            $check_asal->bind_param("i", $asal_id);
+            $check_asal->execute();
+            $check_asal->bind_result($asal_count);
+            $check_asal->fetch();
+            $check_asal->close();
 
-            if ($action === 'add') {
-                $stmt = $conn->prepare("
-                    INSERT INTO harga (
-                        asal_tipe, asal_id, asal_dermaga_id, asal_warehouse_id,
-                        tujuan_tipe, tujuan_id, tujuan_dermaga_id, tujuan_warehouse_id,
-                        area, partner_id, harga, tanggal
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ");
-                $stmt->bind_param(
-                    "siiisiiisids",
-                    $asal_tipe, $asal_id, $asal_dermaga_id, $asal_warehouse_id,
-                    $tujuan_tipe, $tujuan_id, $tujuan_dermaga_id, $tujuan_warehouse_id,
-                    $area, $partner_id, $harga, $tanggal
-                );
-                $stmt->execute();
-                $stmt->close();
-                $success_message = "Data harga berhasil ditambahkan.";
-            } elseif ($action === 'edit' && $harga_id) {
-                $stmt = $conn->prepare("
-                    UPDATE harga SET
-                        asal_tipe = ?, asal_id = ?, asal_dermaga_id = ?, asal_warehouse_id = ?,
-                        tujuan_tipe = ?, tujuan_id = ?, tujuan_dermaga_id = ?, tujuan_warehouse_id = ?,
-                        area = ?, partner_id = ?, harga = ?, tanggal = ?
-                    WHERE harga_id = ?
-                ");
-                $stmt->bind_param(
-                    "siiisiiisidsi",
-                    $asal_tipe, $asal_id, $asal_dermaga_id, $asal_warehouse_id,
-                    $tujuan_tipe, $tujuan_id, $tujuan_dermaga_id, $tujuan_warehouse_id,
-                    $area, $partner_id, $harga, $tanggal, $harga_id
-                );
-                $stmt->execute();
-                $stmt->close();
-                $success_message = "Data harga berhasil diupdate.";
+            // Validasi tujuan
+            $tujuan_table = $tujuan_tipe === 'dermaga' ? 'dermaga' : 'warehouse';
+            $tujuan_col = $tujuan_tipe === 'dermaga' ? 'dermaga_id' : 'warehouse_id';
+            $check_tujuan = $conn->prepare("SELECT COUNT(*) FROM $tujuan_table WHERE $tujuan_col = ?");
+            $check_tujuan->bind_param("i", $tujuan_id);
+            $check_tujuan->execute();
+            $check_tujuan->bind_result($tujuan_count);
+            $check_tujuan->fetch();
+            $check_tujuan->close();
+
+            if ($asal_count == 0) {
+                $error_message = "Asal ID tidak valid untuk tipe $asal_tipe.";
+            } elseif ($tujuan_count == 0) {
+                $error_message = "Tujuan ID tidak valid untuk tipe $tujuan_tipe.";
+            } else {
+                if ($action === 'add') {
+                    // ✅ INSERT hanya kolom yang ada di database
+                    $stmt = $conn->prepare("
+                        INSERT INTO harga (
+                            asal_tipe, asal_id, tujuan_tipe, tujuan_id,
+                            area, partner_id, harga, tanggal
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ");
+                    $stmt->bind_param(
+                        "sisssids",
+                        $asal_tipe, $asal_id, $tujuan_tipe, $tujuan_id,
+                        $area, $partner_id, $harga, $tanggal
+                    );
+                    $stmt->execute();
+                    $stmt->close();
+                    $success_message = "Data harga berhasil ditambahkan.";
+                } elseif ($action === 'edit' && $harga_id) {
+                    // ✅ UPDATE hanya kolom yang ada di database
+                    $stmt = $conn->prepare("
+                        UPDATE harga SET
+                            asal_tipe = ?, asal_id = ?, tujuan_tipe = ?, tujuan_id = ?,
+                            area = ?, partner_id = ?, harga = ?, tanggal = ?
+                        WHERE harga_id = ?
+                    ");
+                    $stmt->bind_param(
+                        "sisssidsi",
+                        $asal_tipe, $asal_id, $tujuan_tipe, $tujuan_id,
+                        $area, $partner_id, $harga, $tanggal, $harga_id
+                    );
+                    $stmt->execute();
+                    $stmt->close();
+                    $success_message = "Data harga berhasil diupdate.";
+                }
             }
         }
     }
 }
 
-// --- Fetch data untuk tampilan (opsional filter) ---
+// --- Fetch data untuk tampilan ---
 $filter_asal_tipe = $_GET['filter_asal_tipe'] ?? '';
 $filter_tujuan_tipe = $_GET['filter_tujuan_tipe'] ?? '';
 $filter_partner = $_GET['filter_partner'] ?? '';
 $search = $_GET['search'] ?? '';
 
+// ✅ Query disesuaikan dengan struktur database baru
 $query = "
-SELECT h.*, p.nama_partner,
-       COALESCE(d.nama_dermaga, w.nama_warehouse) AS nama_asal,
-       COALESCE(td.nama_dermaga, tw.nama_warehouse) AS nama_tujuan
+SELECT h.*, 
+       p.nama_partner,
+       CASE 
+           WHEN h.asal_tipe = 'dermaga' THEN d_asal.nama_dermaga
+           ELSE w_asal.nama_warehouse
+       END AS nama_asal,
+       CASE 
+           WHEN h.tujuan_tipe = 'dermaga' THEN d_tujuan.nama_dermaga
+           ELSE w_tujuan.nama_warehouse
+       END AS nama_tujuan
 FROM harga h
 LEFT JOIN partner p ON h.partner_id = p.partner_id
-LEFT JOIN dermaga d ON h.asal_dermaga_id = d.dermaga_id
-LEFT JOIN warehouse w ON h.asal_warehouse_id = w.warehouse_id
-LEFT JOIN dermaga td ON h.tujuan_dermaga_id = td.dermaga_id
-LEFT JOIN warehouse tw ON h.tujuan_warehouse_id = tw.warehouse_id
+LEFT JOIN dermaga d_asal ON h.asal_tipe = 'dermaga' AND h.asal_id = d_asal.dermaga_id
+LEFT JOIN warehouse w_asal ON h.asal_tipe = 'warehouse' AND h.asal_id = w_asal.warehouse_id
+LEFT JOIN dermaga d_tujuan ON h.tujuan_tipe = 'dermaga' AND h.tujuan_id = d_tujuan.dermaga_id
+LEFT JOIN warehouse w_tujuan ON h.tujuan_tipe = 'warehouse' AND h.tujuan_id = w_tujuan.warehouse_id
 WHERE 1=1
 ";
 
@@ -166,7 +165,6 @@ $warehouse_result = $conn->query("SELECT * FROM warehouse ORDER BY nama_warehous
 $partner_result = $conn->query("SELECT * FROM partner ORDER BY nama_partner");
 ?>
 
-
 <!DOCTYPE html>
 <html lang="id">
 <head>
@@ -174,11 +172,8 @@ $partner_result = $conn->query("SELECT * FROM partner ORDER BY nama_partner");
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Data Harga - PKT System</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-
-<link rel="stylesheet" href="../assets/css/style_master.css"> 
-
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="../assets/css/style_master.css">
 </head>
 <body>
 
@@ -246,14 +241,14 @@ $partner_result = $conn->query("SELECT * FROM partner ORDER BY nama_partner");
 <div class="container-fluid mt-4 px-4">
     <?php if (isset($success_message)): ?>
         <div class="alert alert-success alert-dismissible fade show" role="alert">
-            <i class="bi bi-check-circle"></i> <?php echo $success_message; ?>
+            <i class="fas fa-check-circle"></i> <?php echo $success_message; ?>
             <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
         </div>
     <?php endif; ?>
 
     <?php if (isset($error_message)): ?>
         <div class="alert alert-danger alert-dismissible fade show" role="alert">
-            <i class="bi bi-exclamation-triangle"></i> <?php echo $error_message; ?>
+            <i class="fas fa-exclamation-triangle"></i> <?php echo $error_message; ?>
             <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
         </div>
     <?php endif; ?>
@@ -261,19 +256,14 @@ $partner_result = $conn->query("SELECT * FROM partner ORDER BY nama_partner");
     <div class="card">
         <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
             <h5 class="mb-0"><i class="fas fa-dollar-sign"></i> Data Harga</h5>
-            
-                <br>
-                <div class="col-md-2 text-end">
-                    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addModal">
-                        <i class="bi bi-plus-circle"></i> Tambah Harga
-                    </button>
-                </div>
+            <button type="button" class="btn btn-light" data-bs-toggle="modal" data-bs-target="#addModal">
+                <i class="fas fa-plus-circle"></i> Tambah Harga
+            </button>
         </div>
         <div class="card-body">
-            <!-- Filter & Search Section -->
-             
-            <div class="filter-section">
-                <form method="GET" class="row g-3" id="filterForm">
+            <!-- Filter Section -->
+            <div class="filter-section mb-3">
+                <form method="GET" class="row g-3">
                     <div class="col-md-2">
                         <label class="form-label">Asal Tipe</label>
                         <select class="form-select form-select-sm" name="filter_asal_tipe" onchange="this.form.submit()">
@@ -309,23 +299,22 @@ $partner_result = $conn->query("SELECT * FROM partner ORDER BY nama_partner");
                         <div class="input-group input-group-sm">
                             <input type="text" class="form-control" name="search" placeholder="Cari area, partner, harga..." value="<?= htmlspecialchars($search) ?>">
                             <button class="btn btn-primary" type="submit">
-                                <i class="bi bi-search"></i> Cari
+                                <i class="fas fa-search"></i> Cari
                             </button>
                         </div>
                     </div>
                     <div class="col-md-1">
                         <label class="form-label">&nbsp;</label>
                         <a href="harga.php" class="btn btn-secondary btn-sm d-block">
-                            <i class="bi bi-arrow-clockwise"></i> Reset
+                            <i class="fas fa-sync"></i> Reset
                         </a>
                     </div>
                 </form>
             </div>
 
-
             <div class="table-responsive">
                 <table class="table table-hover table-bordered">
-                    <thead>
+                    <thead class="table-light">
                         <tr>
                             <th style="width: 50px;">No</th>
                             <th>Asal</th>
@@ -334,7 +323,7 @@ $partner_result = $conn->query("SELECT * FROM partner ORDER BY nama_partner");
                             <th>Partner</th>
                             <th>Harga</th>
                             <th>Tanggal</th>
-                            <th style="width: 120px;">Aksi</th>
+                            <th style="width: 150px;">Aksi</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -358,11 +347,11 @@ $partner_result = $conn->query("SELECT * FROM partner ORDER BY nama_partner");
                             <td><strong>Rp <?php echo number_format($row['harga'], 2, ',', '.'); ?></strong></td>
                             <td><?php echo $row['tanggal'] ? date('d/m/Y', strtotime($row['tanggal'])) : '-'; ?></td>
                             <td class="text-center">
-                                <button class="btn btn-sm btn-warning btn-action" onclick="editHarga(<?php echo htmlspecialchars(json_encode($row)); ?>)" title="Edit">
-                                    <i class="fas fa-edit"></i> Edit
+                                <button class="btn btn-sm btn-warning" onclick="editHarga(<?php echo htmlspecialchars(json_encode($row)); ?>)" title="Edit">
+                                    <i class="fas fa-edit"></i>
                                 </button>
-                                <button class="btn btn-sm btn-danger btn-action" onclick="deleteHarga(<?php echo $row['harga_id']; ?>)" title="Hapus">
-                                    <i class="fas fa-trash"></i> Hapus
+                                <button class="btn btn-sm btn-danger" onclick="deleteHarga(<?php echo $row['harga_id']; ?>)" title="Hapus">
+                                    <i class="fas fa-trash"></i>
                                 </button>
                             </td>
                         </tr>
@@ -456,6 +445,7 @@ $partner_result = $conn->query("SELECT * FROM partner ORDER BY nama_partner");
                     </div>
                 </div>
                 <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
                     <button type="submit" class="btn btn-primary">Simpan</button>
                 </div>
             </form>
