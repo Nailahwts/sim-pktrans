@@ -7,6 +7,43 @@ if(!isset($_SESSION['admin'])){
 
 require_once '../config/database.php';
 
+// ===== FUNGSI GENERATE NOMOR BA =====
+function generateNomorBA($conn) {
+    $year = date('Y');
+    
+    $stmt = $conn->prepare("
+        SELECT berita_acara 
+        FROM laporan_realisasi 
+        WHERE berita_acara LIKE CONCAT('BA/', ?, '/%')
+        ORDER BY realisasi_id DESC 
+        LIMIT 1
+    ");
+    $stmt->bind_param("i", $year);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    
+    if($result->num_rows > 0) {
+        $row = $result->fetch_assoc();
+        $lastNomor = $row['berita_acara'];
+        
+        $parts = explode('/', $lastNomor);
+        if(count($parts) >= 3) {
+            $lastNumber = intval($parts[2]);
+            $newNumber = $lastNumber + 1;
+        } else {
+            $newNumber = 1;
+        }
+    } else {
+        $newNumber = 1;
+    }
+    
+    $newNumber = isset($lastNumber) ? $lastNumber + 1 : 1;
+
+}
+
+// Generate nomor BA baru untuk form
+$nomorBABaru = generateNomorBA($conn);
+
 // Ambil username admin
 $admin_id = $_SESSION['admin'];
 $stmt = $conn->prepare("SELECT username FROM user_admin WHERE id=?");
@@ -20,22 +57,35 @@ $username = $admin['username'];
 $report_month = isset($_GET['month']) ? intval($_GET['month']) : date('n');
 $report_year = isset($_GET['year']) ? intval($_GET['year']) : date('Y');
 
+// Validasi bulan dan tahun
+if($report_month < 1 || $report_month > 12) $report_month = date('n');
+if($report_year < 2020 || $report_year > 2030) $report_year = date('Y');
+
 // Proses hapus
 if(isset($_GET['delete'])){
     $id = intval($_GET['delete']);
-    // Hapus semua line dengan BA/Memo yang sama
+    
+    // Ambil data untuk mendapatkan BA dan Memo
     $stmt = $conn->prepare("SELECT berita_acara, memo FROM laporan_realisasi WHERE realisasi_id=?");
     $stmt->bind_param("i", $id);
     $stmt->execute();
-    $data = $stmt->get_result()->fetch_assoc();
+    $result = $stmt->get_result();
     
-    if($data){
+    if($result->num_rows > 0){
+        $data = $result->fetch_assoc();
+        
+        // Hapus semua record dengan BA dan Memo yang sama
         $stmt_del = $conn->prepare("DELETE FROM laporan_realisasi WHERE berita_acara=? AND memo=?");
         $stmt_del->bind_param("ss", $data['berita_acara'], $data['memo']);
-        $stmt_del->execute();
+        
+        if($stmt_del->execute()){
+            $_SESSION['success'] = 'Data berhasil dihapus';
+        } else {
+            $_SESSION['error'] = 'Gagal menghapus data';
+        }
     }
     
-    echo "<script>alert('Data berhasil dihapus');window.location='laporan_realisasi.php?month=$report_month&year=$report_year';</script>";
+    header("Location: laporan_realisasi.php?month=$report_month&year=$report_year");
     exit;
 }
 
@@ -43,40 +93,53 @@ if(isset($_GET['delete'])){
 if(isset($_POST['mark_done'])){
     $realisasi_id = intval($_POST['realisasi_id']);
     
-    // Update semua line dengan BA/Memo yang sama
     $stmt = $conn->prepare("SELECT berita_acara, memo FROM laporan_realisasi WHERE realisasi_id=?");
     $stmt->bind_param("i", $realisasi_id);
     $stmt->execute();
-    $data = $stmt->get_result()->fetch_assoc();
+    $result = $stmt->get_result();
     
-    if($data){
+    if($result->num_rows > 0){
+        $data = $result->fetch_assoc();
+        
         $stmt_upd = $conn->prepare("UPDATE laporan_realisasi SET status_selesai=1 WHERE berita_acara=? AND memo=?");
         $stmt_upd->bind_param("ss", $data['berita_acara'], $data['memo']);
-        $stmt_upd->execute();
+        
+        if($stmt_upd->execute()){
+            $_SESSION['success'] = 'Laporan berhasil ditandai selesai';
+        } else {
+            $_SESSION['error'] = 'Gagal menandai selesai';
+        }
     }
     
-    echo "<script>alert('Laporan berhasil ditandai selesai');window.location='laporan_realisasi.php?month=$report_month&year=$report_year';</script>";
+    header("Location: laporan_realisasi.php?month=$report_month&year=$report_year");
     exit;
 }
 
 // Proses edit
 if(isset($_POST['edit'])){
     $realisasi_id = intval($_POST['edit_realisasi_id']);
-    $berita_acara = $_POST['edit_berita_acara'];
-    $memo = $_POST['edit_memo'];
+    $berita_acara = trim($_POST['edit_berita_acara']);
+    $memo = trim($_POST['edit_memo']);
     $tanggal = $_POST['edit_tanggal'];
     $tanggal_ba = $_POST['edit_tanggal_ba'];
     $tanggal_invoice = $_POST['edit_tanggal_invoice'];
     $rekanan_persen = floatval($_POST['edit_rekanan_persen']);
     
-    // Get old BA/Memo untuk update semua lines
+    // Validasi input
+    if(empty($berita_acara) || empty($memo)) {
+        $_SESSION['error'] = 'Berita Acara dan Memo tidak boleh kosong';
+        header("Location: laporan_realisasi.php?month=$report_month&year=$report_year");
+        exit;
+    }
+    
     $stmt = $conn->prepare("SELECT berita_acara, memo FROM laporan_realisasi WHERE realisasi_id=?");
     $stmt->bind_param("i", $realisasi_id);
     $stmt->execute();
-    $old_data = $stmt->get_result()->fetch_assoc();
+    $result = $stmt->get_result();
     
-    if($old_data){
-        // Update semua line dengan BA/Memo yang sama, recalculate rekanan_harga, hpp, margin
+    if($result->num_rows > 0){
+        $old_data = $result->fetch_assoc();
+        
         $stmt_upd = $conn->prepare("UPDATE laporan_realisasi 
             SET berita_acara=?, memo=?, tanggal=?, tanggal_ba=?, tanggal_invoice=?, 
                 rekanan_persen=?,
@@ -89,10 +152,15 @@ if(isset($_POST['edit'])){
             $rekanan_persen, $rekanan_persen, $rekanan_persen, $rekanan_persen,
             $old_data['berita_acara'], $old_data['memo']
         );
-        $stmt_upd->execute();
+        
+        if($stmt_upd->execute()){
+            $_SESSION['success'] = 'Data berhasil diupdate';
+        } else {
+            $_SESSION['error'] = 'Gagal mengupdate data';
+        }
     }
     
-    echo "<script>alert('Data berhasil diupdate');window.location='laporan_realisasi.php?month=$report_month&year=$report_year';</script>";
+    header("Location: laporan_realisasi.php?month=$report_month&year=$report_year");
     exit;
 }
 
@@ -100,8 +168,23 @@ if(isset($_POST['edit'])){
 if(isset($_POST['submit'])){
     $report_month = intval($_POST['report_month']);
     $report_year = intval($_POST['report_year']);
-    $berita_acara = $_POST['berita_acara'];
-    $memo = $_POST['memo'];
+    
+    // Validasi bulan dan tahun
+    if($report_month < 1 || $report_month > 12 || $report_year < 2020 || $report_year > 2030) {
+        $_SESSION['error'] = 'Bulan atau tahun tidak valid';
+        header("Location: laporan_realisasi.php");
+        exit;
+    }
+    
+    // Gunakan nomor BA dari input form
+    $berita_acara = trim($_POST['berita_acara']);
+    
+    // Validasi: Jika BA kosong, generate otomatis
+    if(empty($berita_acara)) {
+        $berita_acara = generateNomorBA($conn);
+    }
+    
+    $memo = trim($_POST['memo']);
     $tanggal = $_POST['tanggal'];
     $partner_id = intval($_POST['partner_id']);
     $so_id = intval($_POST['so_id']);
@@ -110,11 +193,25 @@ if(isset($_POST['submit'])){
     $tanggal_ba = $_POST['tanggal_ba'];
     $tanggal_invoice = $_POST['tanggal_invoice'];
     
-    // Ambil nomor SO dari so_id yang dipilih
+    // Validasi input required
+    if(empty($tanggal) || $partner_id <= 0 || $so_id <= 0) {
+        $_SESSION['error'] = 'Semua field wajib diisi';
+        header("Location: laporan_realisasi.php?month=$report_month&year=$report_year");
+        exit;
+    }
+    
+    // Ambil nomor SO
     $stmt_so_nomor = $conn->prepare("SELECT nomor_so FROM sales_order WHERE so_id = ?");
     $stmt_so_nomor->bind_param("i", $so_id);
     $stmt_so_nomor->execute();
     $so_nomor_result = $stmt_so_nomor->get_result();
+    
+    if($so_nomor_result->num_rows == 0){
+        $_SESSION['error'] = 'Sales Order tidak ditemukan';
+        header("Location: laporan_realisasi.php?month=$report_month&year=$report_year");
+        exit;
+    }
+    
     $nomor_so = $so_nomor_result->fetch_assoc()['nomor_so'];
     
     // Ambil semua SO dengan nomor_so yang sama
@@ -139,10 +236,12 @@ if(isset($_POST['submit'])){
             CASE 
                 WHEN h.asal_tipe = 'dermaga' THEN (SELECT nama_dermaga FROM dermaga WHERE dermaga_id = h.asal_id)
                 WHEN h.asal_tipe = 'warehouse' THEN (SELECT nama_warehouse FROM warehouse WHERE warehouse_id = h.asal_id)
+                ELSE '-'
             END as asal,
             CASE 
                 WHEN h.tujuan_tipe = 'dermaga' THEN (SELECT nama_dermaga FROM dermaga WHERE dermaga_id = h.tujuan_id)
                 WHEN h.tujuan_tipe = 'warehouse' THEN (SELECT nama_warehouse FROM warehouse WHERE warehouse_id = h.tujuan_id)
+                ELSE '-'
             END as tujuan
         FROM sales_order so
         JOIN barang b ON so.barang_id = b.barang_id
@@ -157,14 +256,12 @@ if(isset($_POST['submit'])){
     $all_so_result = $stmt_all_so->get_result();
     
     if($all_so_result->num_rows == 0){
-        echo "<script>alert('Sales Order tidak ditemukan');history.back();</script>";
+        $_SESSION['error'] = 'Detail Sales Order tidak ditemukan';
+        header("Location: laporan_realisasi.php?month=$report_month&year=$report_year");
         exit;
     }
     
-    // Ambil data invoice jika ada
-    $first_so = $all_so_result->fetch_assoc();
-    $all_so_result->data_seek(0); // Reset pointer
-    
+    // Ambil invoice
     $stmt_inv = $conn->prepare("SELECT nomor_invoice FROM invoice WHERE po_id = (SELECT po_id FROM sales_order WHERE so_id = ?) ORDER BY tanggal_invoice DESC LIMIT 1");
     $stmt_inv->bind_param("i", $so_id);
     $stmt_inv->execute();
@@ -173,8 +270,9 @@ if(isset($_POST['submit'])){
     
     $line = 1;
     $successCount = 0;
+    $errors = [];
     
-    // Insert data per SO (yang memiliki nomor_so sama)
+    // Insert data untuk setiap line
     while($so_row = $all_so_result->fetch_assoc()){
         $area = $so_row['area'] ?: 'Area ' . $line;
         $asal = $so_row['asal'] ?: '-';
@@ -183,10 +281,7 @@ if(isset($_POST['submit'])){
         $qty = $so_row['qty'];
         $denda = $so_row['denda'] ?: 0;
         
-        // Hitung rekanan harga
         $rekanan_harga = $harga * ($rekanan_persen / 100);
-        
-        // Hitung omzet, hpp, margin
         $omzet = ($harga * $qty) - $denda;
         $hpp = ($rekanan_harga * $qty) - $denda;
         $margin = $omzet - $hpp;
@@ -197,54 +292,91 @@ if(isset($_POST['submit'])){
              omzet, hpp, denda, margin, nomor_invoice, tanggal_ba, tanggal_invoice)
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
         
-        $stmt_insert->bind_param("iisssiisissssisssddddddddssss", 
-            $report_month, $report_year, $berita_acara, $memo, $tanggal, $partner_id, $so_row['so_id'], $so_row['nomor_so'],
-            $so_row['barang_id'], $so_row['nama_barang'], $so_row['nama_kapal'], $so_row['periode'], $so_row['nomor_po'],
-            $line, $asal, $tujuan, $area, $rate, $qty, $harga, $rekanan_persen, $rekanan_harga, $omzet, $hpp, $denda,
-            $margin, $nomor_invoice, $tanggal_ba, $tanggal_invoice
-        );
-        
-        if($stmt_insert->execute()){
-            $successCount++;
+        if($stmt_insert){
+            $stmt_insert->bind_param("iisssiisissssisssddddddddssss", 
+                $report_month, $report_year, $berita_acara, $memo, $tanggal, $partner_id, $so_row['so_id'], $so_row['nomor_so'],
+                $so_row['barang_id'], $so_row['nama_barang'], $so_row['nama_kapal'], $so_row['periode'], $so_row['nomor_po'],
+                $line, $asal, $tujuan, $area, $rate, $qty, $harga, $rekanan_persen, $rekanan_harga, $omzet, $hpp, $denda,
+                $margin, $nomor_invoice, $tanggal_ba, $tanggal_invoice
+            );
+            
+            if($stmt_insert->execute()){
+                $successCount++;
+            } else {
+                $errors[] = "Gagal menyimpan line $line: " . $stmt_insert->error;
+            }
+        } else {
+            $errors[] = "Gagal mempersiapkan statement untuk line $line";
         }
         $line++;
     }
     
     if($successCount > 0){
-        echo "<script>alert('Berhasil menyimpan $successCount baris data realisasi');window.location='laporan_realisasi.php?month=$report_month&year=$report_year';</script>";
+        $_SESSION['success'] = "Berhasil menyimpan $successCount baris data realisasi dengan nomor BA: $berita_acara";
     } else {
-        echo "<script>alert('Gagal menyimpan data');history.back();</script>";
+        $_SESSION['error'] = 'Gagal menyimpan data: ' . implode(', ', $errors);
     }
+    
+    header("Location: laporan_realisasi.php?month=$report_month&year=$report_year");
     exit;
 }
 
-// Ambil data master untuk dropdown
+// Ambil data master dengan prepared statements
 $partners = $conn->query("SELECT * FROM partner ORDER BY nama_partner");
 
-// Get SO yang belum digunakan di laporan realisasi bulan ini
-$sales_orders = $conn->query("SELECT so.*, p.nama_partner, b.nama_barang, k.nama_kapal 
-                              FROM sales_order so 
-                              JOIN partner p ON so.partner_id = p.partner_id
-                              JOIN barang b ON so.barang_id = b.barang_id
-                              JOIN kapal k ON so.kapal_id = k.kapal_id
-                              WHERE so.so_id NOT IN (
-                                  SELECT DISTINCT so_id FROM laporan_realisasi 
-                                  WHERE report_month = $report_month AND report_year = $report_year
-                              )
-                              ORDER BY so.tanggal DESC");
+// Query sales orders yang belum direalisasi bulan ini
+$stmt_sales_orders = $conn->prepare("
+    SELECT so.*, p.nama_partner, b.nama_barang, k.nama_kapal 
+    FROM sales_order so 
+    JOIN partner p ON so.partner_id = p.partner_id
+    JOIN barang b ON so.barang_id = b.barang_id
+    JOIN kapal k ON so.kapal_id = k.kapal_id
+    WHERE so.so_id NOT IN (
+        SELECT DISTINCT so_id FROM laporan_realisasi 
+        WHERE report_month = ? AND report_year = ?
+    )
+    ORDER BY so.tanggal DESC
+");
+$stmt_sales_orders->bind_param("ii", $report_month, $report_year);
+$stmt_sales_orders->execute();
+$sales_orders = $stmt_sales_orders->get_result();
 
-// Query laporan realisasi berdasarkan bulan dan tahun - Group by BA/Memo
-$sqlRealisasi = "SELECT lr.*, p.nama_partner,
-                 (SELECT COUNT(*) FROM laporan_realisasi lr2 
-                  WHERE lr2.berita_acara = lr.berita_acara AND lr2.memo = lr.memo) as total_lines
-                 FROM laporan_realisasi lr
-                 JOIN partner p ON lr.partner_id = p.partner_id
-                 WHERE lr.report_month = $report_month AND lr.report_year = $report_year
-                 GROUP BY lr.berita_acara, lr.memo
-                 ORDER BY lr.tanggal DESC, lr.berita_acara, lr.memo";
-$realisasiResult = $conn->query($sqlRealisasi);
+// Query laporan dengan prepared statement
+$stmt_reports = $conn->prepare("
+    SELECT lr.*, p.nama_partner,
+           (SELECT COUNT(*) FROM laporan_realisasi lr2 
+            WHERE lr2.berita_acara = lr.berita_acara AND lr2.memo = lr.memo) as total_lines
+    FROM laporan_realisasi lr
+    JOIN partner p ON lr.partner_id = p.partner_id
+    WHERE lr.report_month = ? AND lr.report_year = ?
+    GROUP BY lr.berita_acara, lr.memo
+    ORDER BY lr.tanggal DESC, lr.berita_acara, lr.memo
+");
+$stmt_reports->bind_param("ii", $report_month, $report_year);
+$stmt_reports->execute();
+$realisasiResult = $stmt_reports->get_result();
 
 $months = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+
+// Statistics dengan prepared statement
+$stmt_stats = $conn->prepare("
+    SELECT 
+        SUM(omzet) as total_omzet,
+        SUM(hpp) as total_hpp,
+        SUM(margin) as total_margin,
+        SUM(qty) as total_qty
+    FROM laporan_realisasi
+    WHERE report_month = ? AND report_year = ?
+");
+$stmt_stats->bind_param("ii", $report_month, $report_year);
+$stmt_stats->execute();
+$totalResult = $stmt_stats->get_result();
+$totalData = $totalResult->fetch_assoc();
+
+$totalOmzet = $totalData['total_omzet'] ?? 0;
+$totalHPP = $totalData['total_hpp'] ?? 0;
+$totalMargin = $totalData['total_margin'] ?? 0;
+$totalQty = $totalData['total_qty'] ?? 0;
 ?>
 
 <!DOCTYPE html>
@@ -257,7 +389,7 @@ $months = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','S
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
-* {
+    * {
     margin: 0;
     padding: 0;
     box-sizing: border-box;
@@ -290,7 +422,7 @@ body {
 }
 
 .sidebar::-webkit-scrollbar {
-    width: 8px;
+    width: 4px;
 }
 
 .sidebar::-webkit-scrollbar-track {
@@ -322,13 +454,13 @@ body {
 
 .sidebar-menu { 
     list-style: none;
-    padding: 15px 0;
+    padding: 1px 0;
     margin: 0;
 }
 
 .sidebar-menu li { 
     list-style: none;
-    padding: 5px 15px;
+    padding: 2px 5px;
     margin: 3px 0;
 }
 
@@ -337,7 +469,7 @@ body {
     text-decoration: none;
     display: flex;
     align-items: center;
-    padding: 14px 18px;
+    padding: 8px 15px;
     border-radius: 12px;
     transition: all 0.3s ease;
     font-size: 15px;
@@ -421,7 +553,7 @@ body {
     display: none;
     padding-left: 20px;
     list-style: none;
-    margin-top: 5px;
+    margin-top: 1px;
 }
 
 .submenu.active { 
@@ -444,7 +576,7 @@ body {
     padding: 10px 18px;
     font-size: 14px;
     background: rgba(255, 255, 255, 0.05);
-    margin: 3px 0;
+    margin: 1px 0;
 }
 
 .arrow { 
@@ -849,6 +981,7 @@ body {
     }
 }
 </style>
+
 </head>
 <body>
 
@@ -868,7 +1001,7 @@ body {
 
         <li class="dropdown">
             <a href="#" class="dropdown-toggle"><i class="fas fa-database"></i> Master Data <span class="arrow"></span></a>
-            <ul class="submenu">
+            <ul class="submenu active">
                 <li><a href="../master/partner.php"><i class="fas fa-handshake"></i> Partner</a></li>
                 <li><a href="../master/ttd.php"><i class="fas fa-signature"></i> Tanda Tangan</a></li>
                 <li><a href="../master/kendaraan.php"><i class="fas fa-truck"></i> Kendaraan</a></li>
@@ -880,7 +1013,7 @@ body {
 
         <li class="dropdown">
             <a href="#" class="dropdown-toggle"><i class="fas fa-exchange-alt"></i> Transaksi <span class="arrow"></span></a>
-            <ul class="submenu">
+            <ul class="submenu active">
                 <li><a href="../transaksi/sales_order.php"><i class="fas fa-shopping-cart"></i> Sales Order</a></li>
                 <li><a href="../transaksi/purchase_order.php"><i class="fas fa-shopping-bag"></i> Purchase Order</a></li>
                 <li><a href="../transaksi/surat_jalan.php"><i class="fas fa-file-alt"></i> Surat Jalan</a></li>
@@ -889,7 +1022,7 @@ body {
         
         <li class="dropdown">
             <a href="#" class="dropdown-toggle"><i class="fas fa-file-invoice"></i> Laporan <span class="arrow"></span></a>
-            <ul class="submenu">
+            <ul class="submenu active">
                 <li><a href="../laporan/order_kerja.php"><i class="fas fa-clipboard-list"></i> Order Kerja</a></li>
                 <li><a href="../laporan/invoice.php"><i class="fas fa-file-invoice-dollar"></i> Invoice</a></li>
                 <li><a href="../laporan/kwitansi.php"><i class="fas fa-receipt"></i> Kwitansi</a></li>
@@ -916,6 +1049,23 @@ body {
 <!-- Main Content -->
 <div class="container-fluid main-content">
     <h2 class="mb-3 text-white"><i class="fas fa-chart-line"></i> Laporan Realisasi Bulanan</h2>
+
+    <!-- Alert Messages -->
+    <?php if(isset($_SESSION['success'])): ?>
+        <div class="alert alert-success alert-dismissible fade show" role="alert">
+            <i class="fas fa-check-circle"></i> <?= $_SESSION['success'] ?>
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        <?php unset($_SESSION['success']); ?>
+    <?php endif; ?>
+    
+    <?php if(isset($_SESSION['error'])): ?>
+        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+            <i class="fas fa-exclamation-circle"></i> <?= $_SESSION['error'] ?>
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        <?php unset($_SESSION['error']); ?>
+    <?php endif; ?>
 
     <!-- Filter Report -->
     <div class="filter-section">
@@ -957,46 +1107,29 @@ body {
     </div>
 
     <!-- Summary Statistics -->
-    <?php
-    // Hitung total dari semua detail lines
-    $sqlTotal = "SELECT 
-                    SUM(omzet) as total_omzet,
-                    SUM(hpp) as total_hpp,
-                    SUM(margin) as total_margin,
-                    SUM(qty) as total_qty
-                 FROM laporan_realisasi
-                 WHERE report_month = $report_month AND report_year = $report_year";
-    $totalResult = $conn->query($sqlTotal);
-    $totalData = $totalResult->fetch_assoc();
-    
-    $totalOmzet = $totalData['total_omzet'] ?? 0;
-    $totalHPP = $totalData['total_hpp'] ?? 0;
-    $totalMargin = $totalData['total_margin'] ?? 0;
-    $totalQty = $totalData['total_qty'] ?? 0;
-    ?>
     <div class="row">
         <div class="col-md-3">
             <div class="stats-box">
                 <p><i class="fas fa-dollar-sign"></i> Total Omzet</p>
-                <h3>Rp <?= number_format($totalOmzet, 2, ',', '.') ?></h3>
+                <h4>Rp <?= number_format($totalOmzet, 2, ',', '.') ?></h4>
             </div>
         </div>
         <div class="col-md-3">
             <div class="stats-box">
                 <p><i class="fas fa-calculator"></i> Total HPP</p>
-                <h3>Rp <?= number_format($totalHPP, 2, ',', '.') ?></h3>
+                <h4>Rp <?= number_format($totalHPP, 2, ',', '.') ?></h4>
             </div>
         </div>
         <div class="col-md-3">
             <div class="stats-box">
                 <p><i class="fas fa-chart-line"></i> Total Margin</p>
-                <h3>Rp <?= number_format($totalMargin, 2, ',', '.') ?></h3>
+                <h4>Rp <?= number_format($totalMargin, 2, ',', '.') ?></h4>
             </div>
         </div>
         <div class="col-md-3">
             <div class="stats-box">
                 <p><i class="fas fa-weight"></i> Total Qty</p>
-                <h3><?= number_format($totalQty, 3, ',', '.') ?> Ton</h3>
+                <h4><?= number_format($totalQty, 3, ',', '.') ?> Ton</h4>
             </div>
         </div>
     </div>
@@ -1050,12 +1183,16 @@ body {
                     <tbody>
                         <?php 
                         // Query untuk menampilkan semua detail lines
-                        $sqlDetail = "SELECT lr.*, p.nama_partner 
-                                     FROM laporan_realisasi lr
-                                     JOIN partner p ON lr.partner_id = p.partner_id
-                                     WHERE lr.report_month = $report_month AND lr.report_year = $report_year
-                                     ORDER BY lr.tanggal DESC, lr.berita_acara, lr.memo, lr.line";
-                        $detailResult = $conn->query($sqlDetail);
+                        $stmt_detail = $conn->prepare("
+                            SELECT lr.*, p.nama_partner 
+                            FROM laporan_realisasi lr
+                            JOIN partner p ON lr.partner_id = p.partner_id
+                            WHERE lr.report_month = ? AND lr.report_year = ?
+                            ORDER BY lr.tanggal DESC, lr.berita_acara, lr.memo, lr.line
+                        ");
+                        $stmt_detail->bind_param("ii", $report_month, $report_year);
+                        $stmt_detail->execute();
+                        $detailResult = $stmt_detail->get_result();
                         
                         $no = 1;
                         $current_ba_memo = '';
@@ -1087,18 +1224,18 @@ body {
                             <td class="text-center" rowspan="<?= $rowspan ?>"><?= $no++ ?></td>
                             <td class="text-center" rowspan="<?= $rowspan ?>">
                                 <?php if(isset($row['status_selesai']) && $row['status_selesai'] == 1): ?>
-                                    <span class="badge badge-selesai"><i class="fas fa-check-circle"></i> Selesai</span>
+                                    <span class="badge bg-success"><i class="fas fa-check-circle"></i> Selesai</span>
                                 <?php else: ?>
                                     <form method="POST" style="display:inline;">
                                         <input type="hidden" name="realisasi_id" value="<?= $row['realisasi_id'] ?>">
-                                        <button type="submit" name="mark_done" class="btn btn-sm btn-warning" title="Tandai Selesai">
-                                            <i class="fas fa-check-circle"></i>
+                                        <button type="submit" name="mark_done" class="btn btn-sm btn-warning" title="Tandai Selesai" onclick="return confirm('Tandai laporan ini sebagai selesai?')">
+                                            <i class="fas fa-check-circle"></i> Proses
                                         </button>
                                     </form>
                                 <?php endif; ?>
                             </td>
                             <td rowspan="<?= $rowspan ?>"><?= htmlspecialchars($row['berita_acara']) ?></td>
-                            <td rowspan="<?= $rowspan ?>"><?= htmlspecialchars($row['memo']) ?></td>
+                            <td rowspan="<?= $rowspan ?>"><?= htmlspecialchars($row['berita_acara']) ?></td>
                             <td class="text-center" rowspan="<?= $rowspan ?>"><?= date('d/m/Y', strtotime($row['tanggal'])) ?></td>
                             <td rowspan="<?= $rowspan ?>"><?= htmlspecialchars($row['nama_partner']) ?></td>
                             <td rowspan="<?= $rowspan ?>"><?= htmlspecialchars($row['nomor_so']) ?></td>
@@ -1114,13 +1251,13 @@ body {
                             <td><?= htmlspecialchars($row['area']) ?></td>
                             <td class="text-end"><?= number_format($row['rate'], 2, ',', '.') ?></td>
                             <td class="text-end"><?= number_format($row['qty'], 3, ',', '.') ?></td>
-                            <td class="text-end">Rp<?= number_format($row['harga'], 2, ',', '.') ?></td>
+                            <td class="text-end">Rp <?= number_format($row['harga'], 2, ',', '.') ?></td>
                             <td class="text-end"><?= number_format($row['rekanan_persen'], 2, ',', '.') ?>%</td>
-                            <td class="text-end">Rp<?= number_format($row['rekanan_harga'], 2, ',', '.') ?></td>
-                            <td class="text-end"><strong>Rp<?= number_format($row['omzet'], 2, ',', '.') ?></strong></td>
-                            <td class="text-end">Rp<?= number_format($row['hpp'], 2, ',', '.') ?></td>
-                            <td class="text-end">Rp<?= number_format($row['denda'], 2, ',', '.') ?></td>
-                            <td class="text-end"><strong class="text-success">Rp<?= number_format($row['margin'], 2, ',', '.') ?></strong></td>
+                            <td class="text-end">Rp <?= number_format($row['rekanan_harga'], 2, ',', '.') ?></td>
+                            <td class="text-end"><strong>Rp <?= number_format($row['omzet'], 2, ',', '.') ?></strong></td>
+                            <td class="text-end">Rp <?= number_format($row['hpp'], 2, ',', '.') ?></td>
+                            <td class="text-end">Rp <?= number_format($row['denda'], 2, ',', '.') ?></td>
+                            <td class="text-end"><strong class="text-success">Rp <?= number_format($row['margin'], 2, ',', '.') ?></strong></td>
                             
                             <?php if($is_first_row): ?>
                             <td rowspan="<?= $rowspan ?>"><?= htmlspecialchars($row['nomor_invoice']) ?></td>
@@ -1132,7 +1269,7 @@ body {
                                 </button>
                                 <a href="?delete=<?= $row['realisasi_id'] ?>&month=<?= $report_month ?>&year=<?= $report_year ?>" 
                                    class="btn btn-danger btn-sm" 
-                                   onclick="return confirm('Hapus semua data dengan BA/Memo ini?')" 
+                                   onclick="return confirm('Hapus semua data dengan BA: <?= htmlspecialchars($row['berita_acara']) ?> dan Memo: <?= htmlspecialchars($row['memo']) ?>?')" 
                                    title="Hapus">
                                     <i class="fas fa-trash"></i>
                                 </a>
@@ -1140,21 +1277,21 @@ body {
                             <?php endif; ?>
                         </tr>
                         <?php 
-                            endwhile;
-                        else:
-                        ?>
-                        <tr>
-                            <td colspan="28" class="text-center text-muted py-4">
-                                <i class="fas fa-inbox" style="font-size: 3rem;"></i>
-                                <p class="mt-2">Belum ada data realisasi untuk bulan ini</p>
-                            </td>
-                        </tr>
-                        <?php endif; ?>
-                    </tbody>
-                </table>
-            </div>
+                        endwhile;
+                    else:
+                    ?>
+                    <tr>
+                        <td colspan="29" class="text-center text-muted py-4">
+                            <i class="fas fa-inbox" style="font-size: 3rem;"></i>
+                            <p class="mt-2">Belum ada data realisasi untuk bulan ini</p>
+                        </td>
+                    </tr>
+                    <?php endif; ?>
+                </tbody>
+            </table>
         </div>
     </div>
+</div>
 </div>
 
 <!-- Modal Input Realisasi -->
@@ -1183,6 +1320,7 @@ body {
                             <label class="form-label fw-bold">Tahun</label>
                             <select name="report_year" class="form-select" required>
                                 <?php
+                                $currentYear = date('Y');
                                 for($y=$currentYear-2; $y<=$currentYear+2; $y++){
                                     $selected = ($y == $report_year) ? 'selected' : '';
                                     echo "<option value='$y' $selected>$y</option>";
@@ -1190,20 +1328,25 @@ body {
                                 ?>
                             </select>
                         </div>
-                        <div class="col-md-4">
-                            <label class="form-label fw-bold">Berita Acara</label>
-                            <input type="text" name="berita_acara" class="form-control" placeholder="Contoh: BA/12345/PKN" maxlength="100" required>
+                        <div class="col-md-3">
+                            <label class="form-label fw-bold">Berita Acara <span class="text-danger">*</span></label>
+                            <input type="text" name="berita_acara" id="input_berita_acara" class="form-control" 
+                                   value="<?= htmlspecialchars($nomorBABaru) ?>" 
+                                   placeholder="Contoh: BA/2025/001" 
+                                   maxlength="100" 
+                                   required>
+                            <small class="text-success"><i class="fas fa-info-circle"></i> Nomor BA otomatis</small>
                         </div>
-                        <div class="col-md-4">
-                            <label class="form-label fw-bold">Memo</label>
-                            <input type="text" name="memo" class="form-control" placeholder="Contoh: MEMO/001/2025" maxlength="100" required>
+                        <div class="col-md-2">
+                            <label class="form-label fw-bold">Rate</label>
+                            <input type="number" name="rate" class="form-control" step="0.01" value="0.00" required>
                         </div>
                         <div class="col-md-3">
-                            <label class="form-label fw-bold">Tanggal</label>
+                            <label class="form-label fw-bold">Tanggal <span class="text-danger">*</span></label>
                             <input type="date" name="tanggal" class="form-control" value="<?= date('Y-m-d') ?>" required>
                         </div>
                         <div class="col-md-3">
-                            <label class="form-label fw-bold">Partner</label>
+                            <label class="form-label fw-bold">Partner <span class="text-danger">*</span></label>
                             <select name="partner_id" class="form-select" required>
                                 <option value="">- Pilih Partner -</option>
                                 <?php
@@ -1215,7 +1358,7 @@ body {
                             </select>
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label fw-bold">Sales Order</label>
+                            <label class="form-label fw-bold">Sales Order <span class="text-danger">*</span></label>
                             <select name="so_id" class="form-select" id="selectSO" required>
                                 <option value="">- Pilih Sales Order -</option>
                                 <?php
@@ -1229,10 +1372,6 @@ body {
                                 </option>
                                 <?php endwhile; ?>
                             </select>
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label fw-bold">Rate</label>
-                            <input type="number" name="rate" class="form-control" step="0.01" value="0.00" required>
                         </div>
                         <div class="col-md-3">
                             <label class="form-label fw-bold">Rekanan % <small class="text-muted">(untuk HPP)</small></label>
@@ -1279,8 +1418,7 @@ body {
                     
                     <div class="alert alert-info mt-3">
                         <i class="fas fa-info-circle"></i> 
-                        <strong>Informasi:</strong> Data akan otomatis dikelompokkan per area berdasarkan Sales Order. 
-                        Qty, Harga, Denda, Omzet, HPP, dan Margin akan dihitung otomatis.
+                        <strong>Informasi:</strong> Nomor BA otomatis digenerate (format BA/TAHUN/NOMOR). Anda dapat mengubahnya sebelum menyimpan.
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -1310,15 +1448,15 @@ body {
                     </div>
                     <div class="row g-3">
                         <div class="col-md-6">
-                            <label class="form-label fw-bold">Berita Acara</label>
+                            <label class="form-label fw-bold">Berita Acara <span class="text-danger">*</span></label>
                             <input type="text" name="edit_berita_acara" id="edit_berita_acara" class="form-control" required>
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label fw-bold">Memo</label>
+                            <label class="form-label fw-bold">Memo <span class="text-danger">*</span></label>
                             <input type="text" name="edit_memo" id="edit_memo" class="form-control" required>
                         </div>
                         <div class="col-md-4">
-                            <label class="form-label fw-bold">Tanggal</label>
+                            <label class="form-label fw-bold">Tanggal <span class="text-danger">*</span></label>
                             <input type="date" name="edit_tanggal" id="edit_tanggal" class="form-control" required>
                         </div>
                         <div class="col-md-4">
@@ -1330,7 +1468,7 @@ body {
                             <input type="date" name="edit_tanggal_invoice" id="edit_tanggal_invoice" class="form-control" required>
                         </div>
                         <div class="col-md-12">
-                            <label class="form-label fw-bold">Rekanan %</label>
+                            <label class="form-label fw-bold">Rekanan % <span class="text-danger">*</span></label>
                             <input type="number" name="edit_rekanan_persen" id="edit_rekanan_persen" class="form-control" step="0.01" required>
                             <small class="text-muted">Perubahan ini akan mempengaruhi perhitungan HPP dan Margin untuk semua line</small>
                         </div>
@@ -1382,6 +1520,20 @@ document.querySelectorAll('.dropdown-toggle').forEach(toggle=>{
     });
 });
 
+// Refresh Nomor BA setiap modal dibuka
+document.getElementById('modalInput')?.addEventListener('show.bs.modal', function() {
+    fetch('get_nomor_ba.php')
+        .then(response => response.json())
+        .then(data => {
+            if(data.success) {
+                document.getElementById('input_berita_acara').value = data.nomor_ba;
+            }
+        })
+        .catch(error => {
+            console.log('Error refreshing BA:', error);
+        });
+});
+
 // Preview SO Detail
 document.getElementById('selectSO')?.addEventListener('change', function() {
     const soId = this.value;
@@ -1390,7 +1542,6 @@ document.getElementById('selectSO')?.addEventListener('change', function() {
         return;
     }
     
-    // Fetch detail per area
     fetch(`get_so_detail.php?so_id=${soId}`)
         .then(response => response.json())
         .then(data => {
@@ -1398,21 +1549,28 @@ document.getElementById('selectSO')?.addEventListener('change', function() {
                 const tbody = document.getElementById('previewTableBody');
                 tbody.innerHTML = '';
                 
+                let totalQty = 0;
+                let totalBiaya = 0;
+                
                 data.areas.forEach((area, index) => {
+                    const subtotal = area.qty * area.harga;
+                    totalQty += parseFloat(area.qty);
+                    totalBiaya += subtotal;
+                    
                     tbody.innerHTML += `
                         <tr>
-                            <td class="text-center">${area.line}</td>
+                            <td class="text-center">${index + 1}</td>
                             <td>${area.area}</td>
                             <td>${area.asal} → ${area.tujuan}</td>
-                            <td class="text-end">${area.qty}</td>
-                            <td class="text-end">Rp ${area.harga}</td>
-                            <td class="text-end">Rp ${area.subtotal}</td>
+                            <td class="text-end">${parseFloat(area.qty).toFixed(3)}</td>
+                            <td class="text-end">Rp ${parseFloat(area.harga).toLocaleString('id-ID', {minimumFractionDigits: 2})}</td>
+                            <td class="text-end">Rp ${subtotal.toLocaleString('id-ID', {minimumFractionDigits: 2})}</td>
                         </tr>
                     `;
                 });
                 
-                document.getElementById('previewTotalQty').textContent = data.total_qty;
-                document.getElementById('previewTotalBiaya').textContent = 'Rp ' + data.total_biaya;
+                document.getElementById('previewTotalQty').textContent = totalQty.toFixed(3);
+                document.getElementById('previewTotalBiaya').textContent = 'Rp ' + totalBiaya.toLocaleString('id-ID', {minimumFractionDigits: 2});
                 document.getElementById('previewArea').style.display = 'block';
             } else {
                 alert(data.message || 'Gagal memuat preview');
@@ -1462,6 +1620,5 @@ function exportToExcel() {
     XLSX.writeFile(wb, 'Laporan_Realisasi_' + monthName[month] + '_' + year + '.xlsx');
 }
 </script>
-
 </body>
 </html>

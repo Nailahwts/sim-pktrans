@@ -198,7 +198,7 @@ $partner_result = $conn->query("SELECT * FROM partner ORDER BY nama_partner");
 
         <li class="dropdown">
             <a href="#" class="dropdown-toggle"><i class="fas fa-database"></i> Master Data <span class="arrow"></span></a>
-            <ul class="submenu">
+            <ul class="submenu active">
                 <li><a href="../master/partner.php"><i class="fas fa-handshake"></i> Partner</a></li>
                 <li><a href="../master/ttd.php"><i class="fas fa-signature"></i> Tanda Tangan</a></li>
                 <li><a href="../master/kendaraan.php"><i class="fas fa-truck"></i> Kendaraan</a></li>
@@ -210,7 +210,7 @@ $partner_result = $conn->query("SELECT * FROM partner ORDER BY nama_partner");
 
         <li class="dropdown">
             <a href="#" class="dropdown-toggle"><i class="fas fa-exchange-alt"></i> Transaksi <span class="arrow"></span></a>
-            <ul class="submenu">
+            <ul class="submenu active">
                 <li><a href="../transaksi/sales_order.php"><i class="fas fa-shopping-cart"></i> Sales Order</a></li>
                 <li><a href="../transaksi/purchase_order.php"><i class="fas fa-shopping-bag"></i> Purchase Order</a></li>
                 <li><a href="../transaksi/surat_jalan.php"><i class="fas fa-file-alt"></i> Surat Jalan</a></li>
@@ -219,7 +219,7 @@ $partner_result = $conn->query("SELECT * FROM partner ORDER BY nama_partner");
 
         <li class="dropdown">
             <a href="#" class="dropdown-toggle"><i class="fas fa-file-invoice"></i> Laporan <span class="arrow"></span></a>
-            <ul class="submenu">
+            <ul class="submenu active">
                 <li><a href="../laporan/order_kerja.php"><i class="fas fa-clipboard-list"></i> Order Kerja</a></li>
                 <li><a href="../laporan/invoice.php"><i class="fas fa-file-invoice-dollar"></i> Invoice</a></li>
                 <li><a href="../laporan/kwitansi.php"><i class="fas fa-receipt"></i> Kwitansi</a></li>
